@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>知识库管理</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css">
+  <style>
+    body {
+      padding: 20px;
+    }
+    .tree-view {
+      margin-bottom: 20px;
+    }
+    .tree-view ul {
+      list-style-type: none;
+      padding-left: 20px;
+    }
+    .tree-view li {
+      margin: 5px 0;
+    }
+    .clickable {
+      cursor: pointer;
+      color: #0d6efd;
+    }
+    .selected {
+      font-weight: bold;
+      color: #0b5ed7;
+    }
+    .file-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 5px;
+      border-bottom: 1px solid #eee;
+    }
+    .file-item:hover {
+      background-color: #f8f9fa;
+    }
+    .file-actions {
+      visibility: hidden;
+    }
+    .file-item:hover .file-actions {
+      visibility: visible;
+    }
+    .back-to-home {
+      position: fixed;
+      right: 20px;
+      top: 20px;
+      z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <!-- 返回首页按钮 -->
+  <a href="/" class="btn btn-outline-primary back-to-home">
+    <i class="bi bi-house-door"></i> 返回首页
+  </a>
+
+  <div class="container">
+    <div class="row mb-4">
+      <div class="col">
+        <h1>知识库管理</h1>
+        <p class="text-muted">上传 Markdown 文件到知识库，并管理目录结构</p>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <span>目录结构</span>
+            <button class="btn btn-sm btn-primary" id="addDirBtn">新建目录</button>
+          </div>
+          <div class="card-body">
+            <div id="directoryTree" class="tree-view">
+              <!-- 目录结构将在这里动态生成 -->
+              <div class="spinner-border spinner-border-sm" role="status">
+                <span class="visually-hidden">加载中...</span>
+              </div>
+              <span>正在加载目录...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-8">
+        <div class="card mb-4">
+          <div class="card-header">上传 Markdown 文件</div>
+          <div class="card-body">
+            <form id="uploadForm">
+              <div class="mb-3">
+                <label for="fileInput" class="form-label">选择 Markdown 文件</label>
+                <input type="file" class="form-control" id="fileInput" accept=".md" required>
+              </div>
+              <div class="mb-3">
+                <label for="targetDir" class="form-label">目标目录</label>
+                <input type="text" class="form-control" id="targetDir" readonly value="">
+                <div class="form-text">请在左侧目录树中选择一个目录</div>
+                <div id="targetDirHelper" class="form-text" style="display: none;"></div>
+              </div>
+              <div class="mb-3">
+                <label for="customName" class="form-label">笔记名称（可选）</label>
+                <input type="text" class="form-control" id="customName" placeholder="默认使用文件名">
+                <div class="form-text">不填写则使用原文件名</div>
+              </div>
+              <button type="submit" class="btn btn-primary" id="uploadBtn">上传文件</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">当前目录文件</div>
+          <div class="card-body">
+            <div id="filesList">
+              <p class="text-muted">请选择一个目录以查看其中的文件</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模态框：新建目录 -->
+  <div class="modal fade" id="newDirModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">新建目录</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="newDirForm">
+            <div class="mb-3">
+              <label for="parentDir" class="form-label">父目录</label>
+              <input type="text" class="form-control" id="parentDir" readonly>
+            </div>
+            <div class="mb-3">
+              <label for="dirName" class="form-label">目录名称</label>
+              <input type="text" class="form-control" id="dirName" required>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="createDirBtn">创建</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模态框：重命名目录 -->
+  <div class="modal fade" id="renameDirModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">重命名目录</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="renameDirForm">
+            <div class="mb-3">
+              <label for="currentDirPath" class="form-label">目录路径</label>
+              <input type="text" class="form-control" id="currentDirPath" readonly>
+            </div>
+            <div class="mb-3">
+              <label for="currentDirName" class="form-label">当前名称</label>
+              <input type="text" class="form-control" id="currentDirName" readonly>
+            </div>
+            <div class="mb-3">
+              <label for="newDirName" class="form-label">新名称</label>
+              <input type="text" class="form-control" id="newDirName" required>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="saveDirRenameBtn">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模态框：重命名文件 -->
+  <div class="modal fade" id="renameFileModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">重命名文件</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="renameFileForm">
+            <div class="mb-3">
+              <label for="fileDirectory" class="form-label">文件路径</label>
+              <input type="text" class="form-control" id="fileDirectory" readonly>
+            </div>
+            <div class="mb-3">
+              <label for="currentFileName" class="form-label">当前名称</label>
+              <input type="text" class="form-control" id="currentFileName" readonly>
+            </div>
+            <div class="mb-3">
+              <label for="newFileName" class="form-label">新名称</label>
+              <input type="text" class="form-control" id="newFileName" required>
+              <div class="form-text">无需添加.md扩展名</div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="saveFileRenameBtn">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 模态框：修改目录显示名称 -->
+  <div class="modal fade" id="changeDisplayNameModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">修改显示名称</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form id="changeDisplayNameForm">
+            <div class="mb-3">
+              <label for="displayNameDirPath" class="form-label">目录路径</label>
+              <input type="text" class="form-control" id="displayNameDirPath" readonly>
+            </div>
+            <div class="mb-3">
+              <label for="currentDisplayName" class="form-label">当前显示名称</label>
+              <input type="text" class="form-control" id="currentDisplayName" readonly>
+            </div>
+            <div class="mb-3">
+              <label for="newDisplayName" class="form-label">新显示名称</label>
+              <input type="text" class="form-control" id="newDisplayName" required>
+              <div class="form-text text-info">注意：此操作只修改侧边栏显示的名称，不改变实际文件路径</div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+          <button type="button" class="btn btn-primary" id="saveDisplayNameBtn">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    // 全局变量
+    let selectedDirectory = '';
+    const modals = {};
+    let directoryMapping = {}; // 存储目录路径与显示名称的映射
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', () => {
+      // 获取模态框实例
+      modals.newDir = new bootstrap.Modal(document.getElementById('newDirModal'));
+      modals.renameDir = new bootstrap.Modal(document.getElementById('renameDirModal'));
+      modals.renameFile = new bootstrap.Modal(document.getElementById('renameFileModal'));
+      modals.changeDisplayName = new bootstrap.Modal(document.getElementById('changeDisplayNameModal'));
+
+      // 首先加载侧边栏映射
+      fetchSidebarMapping().then(() => {
+        // 然后加载目录结构
+        fetchDirectories();
+      });
+      
+      // 表单提交处理
+      document.getElementById('uploadForm').addEventListener('submit', uploadFile);
+      
+      // 新建目录按钮
+      document.getElementById('addDirBtn').addEventListener('click', showNewDirModal);
+      document.getElementById('createDirBtn').addEventListener('click', createDirectory);
+      
+      // 重命名保存按钮
+      document.getElementById('saveDirRenameBtn').addEventListener('click', saveDirectoryRename);
+      document.getElementById('saveFileRenameBtn').addEventListener('click', saveFileRename);
+      
+      // 显示名称保存按钮
+      document.getElementById('saveDisplayNameBtn').addEventListener('click', saveDisplayNameChange);
+    });
+
+    // 获取侧边栏映射
+    async function fetchSidebarMapping() {
+      try {
+        console.log('正在获取侧边栏映射...');
+        const timestamp = new Date().getTime(); // 添加时间戳防止缓存
+        const response = await fetch(`/api/sidebar-mapping?t=${timestamp}`);
+        if (!response.ok) {
+          throw new Error('获取侧边栏映射失败，HTTP状态码: ' + response.status);
+        }
+        
+        directoryMapping = await response.json();
+        console.log('成功获取侧边栏映射:', directoryMapping);
+        return directoryMapping;
+      } catch (error) {
+        console.error('获取侧边栏映射失败:', error);
+        // 即使失败也继续，使用默认目录名
+        return {};
+      }
+    }
+
+    // 获取目录结构
+    async function fetchDirectories() {
+      try {
+        console.log('正在请求目录结构...');
+        document.getElementById('directoryTree').innerHTML = `
+          <div class="spinner-border spinner-border-sm" role="status">
+            <span class="visually-hidden">加载中...</span>
+          </div>
+          <span>正在加载目录...</span>
+        `;
+
+        const response = await fetch('/api/directories', {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          },
+          credentials: 'same-origin'
+        });
+        
+        if (!response.ok) {
+          let errorText = '';
+          try {
+            const errorData = await response.json();
+            errorText = errorData.message || errorData.error || '服务器返回错误状态码: ' + response.status;
+          } catch (e) {
+            errorText = '服务器返回错误状态码: ' + response.status;
+          }
+          
+          throw new Error(errorText);
+        }
+        
+        const directories = await response.json();
+        console.log('成功获取目录结构:', directories);
+        
+        if (!Array.isArray(directories)) {
+          throw new Error('服务器返回的数据格式不正确，预期是数组');
+        }
+        
+        renderDirectoryTree(directories, document.getElementById('directoryTree'));
+      } catch (error) {
+        console.error('获取目录结构失败:', error);
+        document.getElementById('directoryTree').innerHTML = `
+          <div class="alert alert-danger">
+            获取目录结构失败: ${error.message}
+            <hr>
+            <p>请确保服务器正在运行，并尝试以下解决方案:</p>
+            <ol>
+              <li>刷新页面重试</li>
+              <li>检查控制台错误信息</li>
+              <li>确认服务器地址正确</li>
+            </ol>
+            <button class="btn btn-sm btn-primary mt-2" onclick="fetchDirectories()">重试</button>
+          </div>
+        `;
+      }
+    }
+
+    // 渲染目录树
+    function renderDirectoryTree(directories, container) {
+      container.innerHTML = '';
+      
+      const ul = document.createElement('ul');
+      directories.forEach(dir => {
+        const li = document.createElement('li');
+        
+        // 获取目录的显示名称（使用映射或默认名称）
+        const displayName = getDisplayName(dir.path, dir.name);
+        
+        const dirSpan = document.createElement('span');
+        dirSpan.textContent = `📁 ${displayName}`;
+        dirSpan.className = 'clickable';
+        dirSpan.dataset.path = dir.path;
+        dirSpan.dataset.displayName = displayName;
+        dirSpan.dataset.originalName = dir.name;
+        dirSpan.addEventListener('click', () => selectDirectory(dir.path, dirSpan, displayName));
+        
+        // 添加操作按钮
+        const dirActions = document.createElement('span');
+        dirActions.className = 'ms-2 directory-actions';
+        
+        // 修改显示名称按钮（新增）
+        const changeDisplayBtn = document.createElement('button');
+        changeDisplayBtn.className = 'btn btn-sm btn-outline-primary me-1';
+        changeDisplayBtn.textContent = '修改显示名称';
+        changeDisplayBtn.title = '只修改侧边栏中显示的名称，不改变实际文件路径';
+        changeDisplayBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showChangeDisplayNameModal(dir.path, displayName);
+        });
+        
+        // 重命名路径按钮（修改文案以区分）
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+        renameBtn.textContent = '重命名路径';
+        renameBtn.title = '修改实际文件系统路径名称';
+        renameBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showRenameDirModal(dir.path, dir.name, displayName);
+        });
+        
+        // 删除按钮
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-sm btn-outline-danger';
+        deleteBtn.textContent = '删除';
+        deleteBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          confirmDeleteDirectory(dir.path, displayName);
+        });
+        
+        dirActions.appendChild(changeDisplayBtn);
+        dirActions.appendChild(renameBtn);
+        dirActions.appendChild(deleteBtn);
+        
+        li.appendChild(dirSpan);
+        li.appendChild(dirActions);
+        
+        if (dir.children && dir.children.length > 0) {
+          const childContainer = document.createElement('div');
+          renderDirectoryTree(dir.children, childContainer);
+          li.appendChild(childContainer);
+        }
+        
+        ul.appendChild(li);
+      });
+      
+      container.appendChild(ul);
+    }
+
+    // 获取目录的显示名称
+    function getDisplayName(path, defaultName) {
+      console.log('获取显示名称:', path, directoryMapping[path]);
+      if (directoryMapping && directoryMapping[path]) {
+        return directoryMapping[path];
+      }
+      return defaultName;
+    }
+
+    // 选择目录
+    function selectDirectory(path, element, displayName) {
+      // 清除其他选中状态
+      document.querySelectorAll('.tree-view .selected').forEach(el => {
+        el.classList.remove('selected');
+      });
+      
+      // 标记当前选中
+      element.classList.add('selected');
+      
+      // 更新全局变量
+      selectedDirectory = path;
+      
+      // 更新表单中的目标目录（显示路径）
+      document.getElementById('targetDir').value = path;
+      
+      // 如果有显示名称不同于路径，则在目标目录输入框下方显示
+      const targetDirHelper = document.getElementById('targetDirHelper');
+      if (displayName && displayName !== path.split('/').pop()) {
+        targetDirHelper.textContent = `当前选择: ${displayName} (${path})`;
+        targetDirHelper.style.display = 'block';
+      } else {
+        targetDirHelper.style.display = 'none';
+      }
+      
+      // 加载文件列表
+      fetchFiles(path);
+    }
+
+    // 获取目录下的文件
+    async function fetchFiles(dirPath) {
+      try {
+        const response = await fetch(`/api/files?path=${encodeURIComponent(dirPath)}`);
+        const data = await response.json();
+        
+        if (data.success) {
+          renderFilesList(data.files, dirPath);
+        } else {
+          document.getElementById('filesList').innerHTML = `<div class="alert alert-danger">${data.message}</div>`;
+        }
+      } catch (error) {
+        console.error('获取文件列表失败:', error);
+        document.getElementById('filesList').innerHTML = '<div class="alert alert-danger">获取文件列表失败</div>';
+      }
+    }
+
+    // 渲染文件列表
+    function renderFilesList(files, dirPath) {
+      const container = document.getElementById('filesList');
+      container.innerHTML = '';
+      
+      if (files.length === 0) {
+        container.innerHTML = '<p class="text-muted">当前目录没有Markdown文件</p>';
+        return;
+      }
+      
+      files.forEach(file => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'file-item';
+        
+        const fileName = document.createElement('span');
+        // 不显示README.md文件
+        if (file.name === 'README.md') {
+          fileName.innerHTML = `<em class="text-muted">📄 ${file.name} (目录索引文件)</em>`;
+        } else {
+          fileName.textContent = `📄 ${file.name}`;
+        }
+        
+        const fileActions = document.createElement('div');
+        fileActions.className = 'file-actions';
+        
+        // 只对非README.md文件显示操作按钮
+        if (file.name !== 'README.md') {
+          // 重命名按钮
+          const renameBtn = document.createElement('button');
+          renameBtn.className = 'btn btn-sm btn-outline-secondary me-1';
+          renameBtn.textContent = '重命名';
+          renameBtn.addEventListener('click', () => showRenameFileModal(dirPath, file.name));
+          
+          // 删除按钮
+          const deleteBtn = document.createElement('button');
+          deleteBtn.className = 'btn btn-sm btn-outline-danger';
+          deleteBtn.textContent = '删除';
+          deleteBtn.addEventListener('click', () => confirmDeleteFile(dirPath + '/' + file.name, file.name));
+          
+          fileActions.appendChild(renameBtn);
+          fileActions.appendChild(deleteBtn);
+        }
+        
+        fileItem.appendChild(fileName);
+        fileItem.appendChild(fileActions);
+        container.appendChild(fileItem);
+      });
+    }
+
+    // 上传文件
+    async function uploadFile(e) {
+      e.preventDefault();
+      
+      const fileInput = document.getElementById('fileInput');
+      const targetDir = document.getElementById('targetDir').value;
+      const customName = document.getElementById('customName').value;
+      
+      if (!fileInput.files[0]) {
+        alert('请选择要上传的文件');
+        return;
+      }
+      
+      if (!targetDir) {
+        alert('请选择目标目录');
+        return;
+      }
+      
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      formData.append('targetDirectory', targetDir);
+      
+      if (customName) {
+        formData.append('customName', customName);
+      }
+      
+      try {
+        const uploadBtn = document.getElementById('uploadBtn');
+        uploadBtn.disabled = true;
+        uploadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 上传中...';
+        
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('文件上传成功');
+          // 刷新文件列表
+          fetchFiles(targetDir);
+          // 清空表单
+          document.getElementById('uploadForm').reset();
+        } else {
+          alert(`上传失败: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('上传失败:', error);
+        alert('上传失败，请查看控制台了解详情');
+      } finally {
+        const uploadBtn = document.getElementById('uploadBtn');
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '上传文件';
+      }
+    }
+
+    // 显示新建目录模态框
+    function showNewDirModal() {
+      document.getElementById('parentDir').value = selectedDirectory || '';
+      document.getElementById('dirName').value = '';
+      modals.newDir.show();
+    }
+
+    // 创建目录
+    async function createDirectory() {
+      const parentDir = document.getElementById('parentDir').value;
+      const dirName = document.getElementById('dirName').value;
+      
+      if (!dirName) {
+        alert('请输入目录名称');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/directory', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: parentDir, name: dirName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('目录创建成功');
+          modals.newDir.hide();
+          // 刷新目录树
+          fetchDirectories();
+        } else {
+          alert(`创建目录失败: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('创建目录失败:', error);
+        alert('创建目录失败，请查看控制台了解详情');
+      }
+    }
+
+    // 显示重命名目录模态框
+    function showRenameDirModal(dirPath, dirName, displayName) {
+      // 获取父目录路径
+      const pathParts = dirPath.split('/');
+      const parentPath = pathParts.slice(0, -1).join('/');
+      
+      document.getElementById('currentDirPath').value = parentPath;
+      document.getElementById('currentDirName').value = dirName;
+      
+      // 显示当前显示名称而不是路径名称
+      document.getElementById('newDirName').value = displayName || dirName;
+      
+      // 添加额外信息提示
+      const dirNameHelp = document.getElementById('dirNameHelp') || 
+                          document.querySelector('#renameDirModal .form-text');
+      if (dirNameHelp) {
+        dirNameHelp.textContent = `原路径名称: ${dirName}, 当前显示名称: ${displayName || dirName}`;
+      }
+      
+      modals.renameDir.show();
+    }
+
+    // 保存目录重命名
+    async function saveDirectoryRename() {
+      const dirPath = document.getElementById('currentDirPath').value;
+      const oldName = document.getElementById('currentDirName').value;
+      const newName = document.getElementById('newDirName').value;
+      
+      if (!newName) {
+        alert('请输入新的目录名称');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/directory', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: dirPath, oldName, newName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('目录重命名成功');
+          modals.renameDir.hide();
+          // 刷新目录树
+          fetchDirectories();
+        } else {
+          alert(`重命名目录失败: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('重命名目录失败:', error);
+        alert('重命名目录失败，请查看控制台了解详情');
+      }
+    }
+
+    // 显示重命名文件模态框
+    function showRenameFileModal(dirPath, fileName) {
+      document.getElementById('fileDirectory').value = dirPath;
+      document.getElementById('currentFileName').value = fileName;
+      
+      // 去掉.md后缀显示在输入框
+      const nameWithoutExt = fileName.replace(/\.md$/, '');
+      document.getElementById('newFileName').value = nameWithoutExt;
+      
+      modals.renameFile.show();
+    }
+
+    // 保存文件重命名
+    async function saveFileRename() {
+      const directory = document.getElementById('fileDirectory').value;
+      const oldName = document.getElementById('currentFileName').value;
+      let newName = document.getElementById('newFileName').value;
+      
+      if (!newName) {
+        alert('请输入新的文件名称');
+        return;
+      }
+      
+      // 确保有.md后缀
+      if (!newName.endsWith('.md')) {
+        newName = `${newName}.md`;
+      }
+      
+      try {
+        const response = await fetch('/api/file', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ directory, oldName, newName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('文件重命名成功');
+          modals.renameFile.hide();
+          // 刷新文件列表
+          fetchFiles(directory);
+        } else {
+          alert(`重命名文件失败: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('重命名文件失败:', error);
+        alert('重命名文件失败，请查看控制台了解详情');
+      }
+    }
+
+    // 确认删除目录
+    function confirmDeleteDirectory(dirPath, displayName) {
+      if (confirm(`确定要删除目录"${displayName}"(${dirPath})吗？此操作不可恢复！`)) {
+        deleteDirectory(dirPath);
+      }
+    }
+    
+    // 删除目录
+    async function deleteDirectory(dirPath) {
+      try {
+        const response = await fetch('/api/directory', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: dirPath })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('目录删除成功');
+          // 刷新目录树
+          fetchDirectories();
+          // 如果删除的是当前选中的目录，清空右侧
+          if (selectedDirectory === dirPath) {
+            selectedDirectory = '';
+            document.getElementById('targetDir').value = '';
+            document.getElementById('filesList').innerHTML = '<p class="text-muted">请选择一个目录以查看其中的文件</p>';
+            
+            // 隐藏路径帮助文本
+            const targetDirHelper = document.getElementById('targetDirHelper');
+            if (targetDirHelper) {
+              targetDirHelper.style.display = 'none';
+            }
+          }
+        } else {
+          alert(`删除目录失败: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('删除目录失败:', error);
+        alert('删除目录失败，请查看控制台了解详情');
+      }
+    }
+    
+    // 确认删除文件
+    function confirmDeleteFile(filePath, fileName) {
+      if (confirm(`确定要删除文件"${fileName}"吗？此操作不可恢复！`)) {
+        deleteFile(filePath);
+      }
+    }
+    
+    // 删除文件
+    async function deleteFile(filePath) {
+      try {
+        const response = await fetch('/api/file', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: filePath })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('文件删除成功');
+          // 刷新文件列表
+          if (selectedDirectory) {
+            fetchFiles(selectedDirectory);
+          }
+        } else {
+          alert(`删除文件失败: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('删除文件失败:', error);
+        alert('删除文件失败，请查看控制台了解详情');
+      }
+    }
+
+    // 显示修改显示名称模态框
+    function showChangeDisplayNameModal(dirPath, displayName) {
+      document.getElementById('displayNameDirPath').value = dirPath;
+      document.getElementById('currentDisplayName').value = displayName || dirPath.split('/').pop();
+      document.getElementById('newDisplayName').value = displayName || '';
+      
+      modals.changeDisplayName.show();
+    }
+    
+    // 保存显示名称修改
+    async function saveDisplayNameChange() {
+      const dirPath = document.getElementById('displayNameDirPath').value;
+      const newDisplayName = document.getElementById('newDisplayName').value;
+      
+      if (!newDisplayName) {
+        alert('请输入新的显示名称');
+        return;
+      }
+      
+      try {
+        const response = await fetch('/api/directory-display-name', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: dirPath, newDisplayName })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          alert('显示名称修改成功');
+          modals.changeDisplayName.hide();
+          
+          // 更新本地映射
+          directoryMapping[dirPath] = newDisplayName;
+          
+          // 刷新目录树
+          fetchDirectories();
+          
+          // 如果修改的是当前选中的目录，更新目标目录helper
+          if (selectedDirectory === dirPath) {
+            const targetDirHelper = document.getElementById('targetDirHelper');
+            targetDirHelper.textContent = `当前选择: ${newDisplayName} (${dirPath})`;
+            targetDirHelper.style.display = 'block';
+          }
+        } else {
+          alert(`修改显示名称失败: ${result.message}`);
+        }
+      } catch (error) {
+        console.error('修改显示名称失败:', error);
+        alert('修改显示名称失败，请查看控制台了解详情');
+      }
+    }
+  </script>
+</body>
+</html>
